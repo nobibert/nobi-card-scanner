@@ -13,7 +13,6 @@ import {
   Easing,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import * as Font from 'expo-font';
 import * as ImagePicker from 'expo-image-picker';
 import { Audio } from 'expo-av';
 import QRCode from 'react-native-qrcode-svg';
@@ -32,6 +31,7 @@ import {
   QrIcon,
   CloseIcon,
   RetakeIcon,
+  NobiLogo,
 } from './components/Icons';
 
 type ActionId = 'thankyou' | 'brochure' | 'email' | 'meeting' | 'connect';
@@ -81,11 +81,8 @@ export default function App() {
   const pulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    Font.loadAsync({
-      'Hanken-Light': require('./assets/fonts/HankenGrotesk-Light.ttf'),
-      'Hanken': require('./assets/fonts/HankenGrotesk-Regular.ttf'),
-      'Hanken-Bold': require('./assets/fonts/HankenGrotesk-Bold.ttf'),
-    }).then(() => setFontsLoaded(true));
+    // Use system fonts for Snack compatibility
+    setFontsLoaded(true);
   }, []);
 
   useEffect(() => {
@@ -238,7 +235,7 @@ export default function App() {
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           {/* Header */}
           <View style={styles.header}>
-            <Image source={require('./assets/nobi_logo.png')} style={styles.logo} resizeMode="contain" />
+            <NobiLogo width={60} height={22} color={colors.nightGreen} />
             <Pressable onPress={() => setQrOpen(true)} style={styles.myCardBtn} hitSlop={8}>
               <QrIcon size={16} color={colors.nightGreen} />
               <Text style={styles.myCardBtnText}>My Card</Text>

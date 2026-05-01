@@ -12,10 +12,11 @@ export const colors = {
   dangerBg: '#fde8e4',
 };
 
+// Snack build: system fonts only (Hanken cannot be bundled via Snack)
 export const fonts = {
-  light: 'Hanken-Light',
-  regular: 'Hanken',
-  bold: 'Hanken-Bold',
+  light: undefined as unknown as string,
+  regular: undefined as unknown as string,
+  bold: undefined as unknown as string,
 };
 
 export const radius = {

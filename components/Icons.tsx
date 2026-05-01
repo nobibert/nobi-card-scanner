@@ -1,5 +1,13 @@
 import React from 'react';
-import Svg, { Path, Rect, Circle } from 'react-native-svg';
+import Svg, { Path, Rect, Circle, Text as SvgText, G } from 'react-native-svg';
+
+export const NobiLogo = ({ width = 60, height = 22, color = '#2e4447' }: { width?: number; height?: number; color?: string }) => (
+  <Svg viewBox="0 0 120 44" width={width} height={height}>
+    <G fill={color}>
+      <SvgText x="0" y="32" fontSize="30" fontWeight="300" fontFamily="sans-serif">nobi</SvgText>
+    </G>
+  </Svg>
+);
 
 type Props = { size?: number; color?: string };
 
