@@ -11,6 +11,7 @@ import {
   StatusBar,
   Animated,
   Easing,
+  TextInput,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -42,17 +43,46 @@ const ACTIONS: {
   sub: string;
   Icon: React.ComponentType<{ size?: number; color?: string }>;
 }[] = [
-  { id: 'thankyou', title: 'Send a thank-you note', sub: 'Odoo task: thank-you with newsletter invite', Icon: HeartIcon },
-  { id: 'brochure', title: 'Send a brochure', sub: 'Odoo task: send the Nobi product brochure', Icon: BookIcon },
-  { id: 'email', title: 'Send a follow-up email', sub: 'Odoo task: draft & send a follow-up email', Icon: MailIcon },
-  { id: 'meeting', title: 'Schedule a meeting', sub: 'Odoo task: plan a meeting with this contact', Icon: CalendarIcon },
-  { id: 'connect', title: 'Connect on LinkedIn', sub: 'Odoo task: send a LinkedIn connection request', Icon: PersonIcon },
+  { id: 'thankyou', title: 'Send a thank-you note', sub: 'Odoo activity: thank-you with newsletter invite', Icon: HeartIcon },
+  { id: 'brochure', title: 'Send a brochure', sub: 'Odoo activity: send the Nobi product brochure', Icon: BookIcon },
+  { id: 'email', title: 'Send a follow-up email', sub: 'Odoo activity: draft & send a follow-up email', Icon: MailIcon },
+  { id: 'meeting', title: 'Schedule a meeting', sub: 'Odoo activity: plan a meeting with this contact', Icon: CalendarIcon },
+  { id: 'connect', title: 'Connect on LinkedIn', sub: 'Odoo activity: send a LinkedIn connection request', Icon: PersonIcon },
 ];
+
+// ---------- Backend config ----------
+// Default backend URL. Override via the gear icon in the header.
+// In production this becomes the Hetzner URL, e.g. https://card-scanner.nobi.life
+const DEFAULT_BACKEND_URL =
+  (typeof process !== 'undefined' && (process as any).env?.EXPO_PUBLIC_BACKEND_URL) ||
+  'https://card-scanner.nobi.life';
+
+type Job = {
+  job_id: string;
+  status: 'processing' | 'done' | 'error';
+  step?: string;
+  contact?: { first_name?: string; last_name?: string; company?: string };
+  partner_id?: number;
+  activity_ids?: number[];
+  error?: string;
+  kind: 'scan' | 'quick';
+  created_at: number;
+  summary?: string; // for quick-todo
+};
 
 function fmt(s: number): string {
   const m = Math.floor(s / 60);
   const ss = String(s % 60).padStart(2, '0');
   return `${m}:${ss}`;
+}
+
+function jobLabel(j: Job): string {
+  if (j.kind === 'quick') return j.summary ? j.summary : 'Quick to-do';
+  if (j.contact) {
+    const name = [j.contact.first_name, j.contact.last_name].filter(Boolean).join(' ');
+    if (name) return j.contact.company ? `${name} · ${j.contact.company}` : name;
+  }
+  return 'Scanning…';
 }
 
 export default function App() {
@@ -65,23 +95,29 @@ export default function App() {
   const [recordingTime, setRecordingTime] = useState(0);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const [backendUrl, setBackendUrl] = useState<string>(DEFAULT_BACKEND_URL);
+  const [backendUrlDraft, setBackendUrlDraft] = useState<string>(DEFAULT_BACKEND_URL);
+
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [submitting, setSubmitting] = useState(false);
 
   const recordingRef = useRef<Audio.Recording | null>(null);
   const recordingStartRef = useRef(0);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Sheet recording state
   const [sheetRecording, setSheetRecording] = useState(false);
   const [sheetRecTime, setSheetRecTime] = useState(0);
   const [sheetHasRec, setSheetHasRec] = useState(false);
+  const [sheetSubmitting, setSheetSubmitting] = useState(false);
   const sheetRecRef = useRef<Audio.Recording | null>(null);
+  const sheetRecUriRef = useRef<string | null>(null);
   const sheetTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Pulse animation for recording mic
   const pulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    // Use system fonts for Snack compatibility
     setFontsLoaded(true);
   }, []);
 
@@ -168,26 +204,95 @@ export default function App() {
     setVoiceDuration(0);
   };
 
-  const onProcess = () => {
-    Alert.alert(
-      'Processing…',
-      `• Photo: ${photoUri ? 'OK' : '—'}\n` +
-        `• Tasks: ${selectedActions.size ? Array.from(selectedActions).join(', ') : '—'}\n` +
-        `• Voice note: ${voiceUri ? `OK (${fmt(voiceDuration)})` : '—'}\n\n` +
-        `Next: enrich contact → create in Odoo → add task(s).`,
-      [
-        {
-          text: 'OK',
-          onPress: () => {
-            // reset
-            setPhotoUri(null);
-            setSelectedActions(new Set());
-            setVoiceUri(null);
-            setVoiceDuration(0);
-          },
-        },
-      ]
-    );
+  // ---------- Backend integration ----------
+
+  const upsertJob = (j: Job) => {
+    setJobs((prev) => {
+      const idx = prev.findIndex((x) => x.job_id === j.job_id);
+      if (idx === -1) return [j, ...prev].slice(0, 5);
+      const next = prev.slice();
+      next[idx] = { ...next[idx], ...j };
+      return next;
+    });
+  };
+
+  const pollJob = async (jobId: string) => {
+    const url = `${backendUrl.replace(/\/$/, '')}/scan/${jobId}`;
+    for (let i = 0; i < 60; i++) {
+      try {
+        const r = await fetch(url);
+        if (r.ok) {
+          const data = await r.json();
+          upsertJob({
+            job_id: jobId,
+            kind: 'scan',
+            created_at: Date.now(),
+            status: data.status,
+            step: data.step,
+            contact: data.contact,
+            partner_id: data.partner_id,
+            activity_ids: data.activity_ids,
+            error: data.error,
+          });
+          if (data.status === 'done' || data.status === 'error') return data;
+        }
+      } catch (e) {
+        // network blip; keep trying
+      }
+      await new Promise((res) => setTimeout(res, 2000));
+    }
+    return null;
+  };
+
+  const onProcess = async () => {
+    if (!photoUri || submitting) return;
+    setSubmitting(true);
+    try {
+      const fd = new FormData();
+      fd.append('photo', {
+        // @ts-ignore — RN FormData file blob
+        uri: photoUri,
+        name: 'card.jpg',
+        type: 'image/jpeg',
+      } as any);
+      fd.append('actions', Array.from(selectedActions).join(','));
+      fd.append('user_id', '2');
+      if (voiceUri) {
+        fd.append('voice', {
+          // @ts-ignore
+          uri: voiceUri,
+          name: 'voice.m4a',
+          type: 'audio/m4a',
+        } as any);
+      }
+      const url = `${backendUrl.replace(/\/$/, '')}/scan`;
+      const res = await fetch(url, { method: 'POST', body: fd });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`Backend ${res.status}: ${txt.slice(0, 200)}`);
+      }
+      const data = await res.json();
+      const job: Job = {
+        job_id: data.job_id,
+        status: 'processing',
+        kind: 'scan',
+        created_at: Date.now(),
+      };
+      upsertJob(job);
+
+      // reset form immediately so user can scan next card
+      setPhotoUri(null);
+      setSelectedActions(new Set());
+      setVoiceUri(null);
+      setVoiceDuration(0);
+
+      // poll in background
+      pollJob(data.job_id);
+    } catch (e: any) {
+      Alert.alert('Could not reach backend', String(e?.message || e));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   // Sheet recording
@@ -198,6 +303,7 @@ export default function App() {
       await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
       const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
       sheetRecRef.current = recording;
+      sheetRecUriRef.current = null;
       const start = Date.now();
       setSheetRecording(true);
       setSheetRecTime(0);
@@ -215,6 +321,7 @@ export default function App() {
     setSheetRecording(false);
     try {
       await sheetRecRef.current?.stopAndUnloadAsync();
+      sheetRecUriRef.current = sheetRecRef.current?.getURI() ?? null;
       setSheetHasRec(true);
     } catch (e) {
       console.error(e);
@@ -226,6 +333,48 @@ export default function App() {
     setSheetHasRec(false);
     setSheetRecTime(0);
     setSheetRecording(false);
+    sheetRecUriRef.current = null;
+  };
+
+  const sendQuickTodo = async () => {
+    if (!sheetRecUriRef.current || sheetSubmitting) return;
+    setSheetSubmitting(true);
+    try {
+      const fd = new FormData();
+      fd.append('voice', {
+        // @ts-ignore
+        uri: sheetRecUriRef.current,
+        name: 'todo.m4a',
+        type: 'audio/m4a',
+      } as any);
+      fd.append('user_id', '2');
+      const url = `${backendUrl.replace(/\/$/, '')}/quick-todo`;
+      const res = await fetch(url, { method: 'POST', body: fd });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`Backend ${res.status}: ${txt.slice(0, 200)}`);
+      }
+      const data = await res.json();
+      const job: Job = {
+        job_id: `q-${Date.now()}`,
+        status: 'done',
+        kind: 'quick',
+        created_at: Date.now(),
+        summary: data.summary,
+        activity_ids: data.activity_id ? [data.activity_id] : [],
+      };
+      upsertJob(job);
+      closeSheet();
+    } catch (e: any) {
+      Alert.alert('Could not reach backend', String(e?.message || e));
+    } finally {
+      setSheetSubmitting(false);
+    }
+  };
+
+  const saveSettings = () => {
+    setBackendUrl(backendUrlDraft.trim());
+    setSettingsOpen(false);
   };
 
   return (
@@ -236,11 +385,46 @@ export default function App() {
           {/* Header */}
           <View style={styles.header}>
             <NobiLogo width={60} height={22} color={colors.nightGreen} />
-            <Pressable onPress={() => setQrOpen(true)} style={styles.myCardBtn} hitSlop={8}>
-              <QrIcon size={16} color={colors.nightGreen} />
-              <Text style={styles.myCardBtnText}>My Card</Text>
-            </Pressable>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Pressable
+                onPress={() => {
+                  setBackendUrlDraft(backendUrl);
+                  setSettingsOpen(true);
+                }}
+                style={styles.myCardBtn}
+                hitSlop={8}
+              >
+                <Text style={styles.myCardBtnText}>⚙</Text>
+              </Pressable>
+              <Pressable onPress={() => setQrOpen(true)} style={styles.myCardBtn} hitSlop={8}>
+                <QrIcon size={16} color={colors.nightGreen} />
+                <Text style={styles.myCardBtnText}>My Card</Text>
+              </Pressable>
+            </View>
           </View>
+
+          {/* Status strip */}
+          {jobs.length > 0 && (
+            <View style={styles.statusStrip}>
+              <Text style={styles.statusStripTitle}>Recent</Text>
+              {jobs.slice(0, 3).map((j) => (
+                <View key={j.job_id} style={styles.statusRow}>
+                  <View style={[
+                    styles.statusDot,
+                    j.status === 'done' && { backgroundColor: colors.morningGreen },
+                    j.status === 'error' && { backgroundColor: colors.danger },
+                    j.status === 'processing' && { backgroundColor: '#f0a020' },
+                  ]} />
+                  <Text style={styles.statusLabel} numberOfLines={1}>
+                    {jobLabel(j)}
+                  </Text>
+                  <Text style={styles.statusMeta}>
+                    {j.status === 'processing' ? (j.step || 'working') : j.status === 'done' ? 'done' : 'error'}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
 
           {/* Step 1 — Capture */}
           <View style={styles.card}>
@@ -348,13 +532,13 @@ export default function App() {
           <View style={{ marginTop: 6 }}>
             <Pressable
               onPress={onProcess}
-              disabled={!ready}
-              style={[styles.processBtn, !ready && styles.processBtnDisabled]}
+              disabled={!ready || submitting}
+              style={[styles.processBtn, (!ready || submitting) && styles.processBtnDisabled]}
             >
-              <Text style={styles.processBtnText}>Process</Text>
-              <ArrowRightIcon />
+              <Text style={styles.processBtnText}>{submitting ? 'Sending…' : 'Process'}</Text>
+              {!submitting && <ArrowRightIcon />}
             </Pressable>
-            <Text style={styles.processPipeline}>Enrich contact · Create in Odoo · Add task</Text>
+            <Text style={styles.processPipeline}>Enrich contact · Create in Odoo · Add activity</Text>
           </View>
 
           <View style={{ height: 40 }} />
@@ -374,7 +558,7 @@ export default function App() {
             <Text style={styles.sheetKicker}>— Quick to-do</Text>
             <Text style={styles.sheetTitle}>Speak a to-do for Odoo</Text>
             <Text style={styles.sheetSub}>
-              Just like calling <Text style={{ fontFamily: fonts.bold, color: colors.nightGreen }}>+32 460 25 80 17</Text> — we transcribe and create the task(s) in your Odoo inbox.
+              Just like calling <Text style={{ fontFamily: fonts.bold, color: colors.nightGreen }}>+32 460 25 80 17</Text> — we transcribe and create the to-do in your Odoo inbox.
             </Text>
 
             <View style={{ alignItems: 'center', marginTop: 6 }}>
@@ -390,7 +574,7 @@ export default function App() {
                 <MicIcon size={40} />
               </Pressable>
               <Text style={styles.bigMicHint}>
-                {sheetRecording ? `Recording… ${fmt(sheetRecTime)}` : sheetHasRec ? 'Recorded — release to send' : 'Tap and hold to record'}
+                {sheetRecording ? `Recording… ${fmt(sheetRecTime)}` : sheetHasRec ? 'Recorded — tap Send' : 'Tap and hold to record'}
               </Text>
             </View>
 
@@ -399,14 +583,13 @@ export default function App() {
                 <Text style={[styles.btnText, { color: colors.nightGreen }]}>Cancel</Text>
               </Pressable>
               <Pressable
-                disabled={!sheetHasRec}
-                onPress={() => {
-                  Alert.alert('Sent to Odoo', 'Task will appear in your inbox.');
-                  closeSheet();
-                }}
-                style={[styles.btn, styles.btnPrimary, !sheetHasRec && { backgroundColor: '#b9c2c1' }]}
+                disabled={!sheetHasRec || sheetSubmitting}
+                onPress={sendQuickTodo}
+                style={[styles.btn, styles.btnPrimary, (!sheetHasRec || sheetSubmitting) && { backgroundColor: '#b9c2c1' }]}
               >
-                <Text style={[styles.btnText, { color: colors.white }]}>Send to Odoo</Text>
+                <Text style={[styles.btnText, { color: colors.white }]}>
+                  {sheetSubmitting ? 'Sending…' : 'Send to Odoo'}
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -434,6 +617,39 @@ export default function App() {
             <Pressable onPress={() => setQrOpen(false)} style={[styles.btn, styles.btnPrimary, { marginTop: 18 }]}>
               <Text style={[styles.btnText, { color: colors.white }]}>Close</Text>
             </Pressable>
+          </View>
+        </Modal>
+
+        {/* Settings modal */}
+        <Modal visible={settingsOpen} transparent animationType="slide" onRequestClose={() => setSettingsOpen(false)}>
+          <Pressable style={styles.sheetBackdrop} onPress={() => setSettingsOpen(false)} />
+          <View style={styles.sheet}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetKicker}>— Settings</Text>
+            <Text style={styles.sheetTitle}>Backend URL</Text>
+            <Text style={styles.sheetSub}>
+              Where to send scans and to-dos. Use the Hetzner URL for production, or a local LAN URL during testing.
+            </Text>
+
+            <TextInput
+              value={backendUrlDraft}
+              onChangeText={setBackendUrlDraft}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              placeholder="https://card-scanner.nobi.life"
+              placeholderTextColor={colors.muted}
+              style={styles.input}
+            />
+
+            <View style={styles.sheetActions}>
+              <Pressable onPress={() => setSettingsOpen(false)} style={[styles.btn, styles.btnGhost]}>
+                <Text style={[styles.btnText, { color: colors.nightGreen }]}>Cancel</Text>
+              </Pressable>
+              <Pressable onPress={saveSettings} style={[styles.btn, styles.btnPrimary]}>
+                <Text style={[styles.btnText, { color: colors.white }]}>Save</Text>
+              </Pressable>
+            </View>
           </View>
         </Modal>
       </SafeAreaView>
@@ -466,6 +682,22 @@ const styles = StyleSheet.create({
     borderColor: colors.sandBorder,
   },
   myCardBtnText: { fontFamily: fonts.bold, fontSize: 12, color: colors.nightGreen },
+
+  // Status strip
+  statusStrip: {
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.sandBorder,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    gap: 6,
+  },
+  statusStripTitle: { fontFamily: fonts.bold, fontSize: 11, color: colors.morningGreen, marginBottom: 2 },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#ccc' },
+  statusLabel: { flex: 1, fontFamily: fonts.bold, fontSize: 12.5, color: colors.nightGreen },
+  statusMeta: { fontFamily: fonts.regular, fontSize: 11, color: colors.muted },
 
   // Card
   card: {
@@ -657,6 +889,19 @@ const styles = StyleSheet.create({
   btnGhost: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.sandBorder },
   btnPrimary: { backgroundColor: colors.nightGreen },
   btnText: { fontFamily: fonts.bold, fontSize: 14 },
+
+  // Settings input
+  input: {
+    borderWidth: 1,
+    borderColor: colors.sandBorder,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: colors.nightGreen,
+    backgroundColor: colors.sand,
+    marginBottom: 18,
+  },
 
   // QR modal
   qrModal: {
