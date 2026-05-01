@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Nobi Card Scanner",
+    "slug": "nobi-card-scanner",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/nobi_logo.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/nobi_logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#faf6ee"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "life.nobi.cardscanner",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Take photos of business cards and badges",
+        "NSMicrophoneUsageDescription": "Record voice notes for follow-up tasks"
+      }
+    },
+    "android": {
+      "package": "life.nobi.cardscanner",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/nobi_logo.png",
+        "backgroundColor": "#faf6ee"
+      },
+      "permissions": ["CAMERA", "RECORD_AUDIO"]
+    },
+    "plugins": [
+      ["expo-camera", { "cameraPermission": "Take photos of business cards" }],
+      ["expo-av", { "microphonePermission": "Record voice notes" }]
+    ]
+  }
+}
