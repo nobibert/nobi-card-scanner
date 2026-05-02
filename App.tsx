@@ -57,6 +57,14 @@ const DEFAULT_BACKEND_URL =
   (typeof process !== 'undefined' && (process as any).env?.EXPO_PUBLIC_BACKEND_URL) ||
   'https://card-scanner.nobi.life';
 
+type Enrichment = {
+  providers?: string[];
+  errors?: string[];
+  skipped?: Record<string, string>;
+  odoo_iap?: { vat?: string; company_name?: string; industry?: string };
+  dropcontact?: { linkedin?: string; email_verified?: string };
+};
+
 type Job = {
   job_id: string;
   status: 'processing' | 'done' | 'error';
@@ -64,11 +72,25 @@ type Job = {
   contact?: { first_name?: string; last_name?: string; company?: string };
   partner_id?: number;
   activity_ids?: number[];
+  enrichment?: Enrichment;
   error?: string;
   kind: 'scan' | 'quick';
   created_at: number;
   summary?: string; // for quick-todo
 };
+
+function enrichmentLabel(e?: Enrichment): string | null {
+  if (!e) return null;
+  const providers = e.providers || [];
+  if (providers.length > 0) {
+    return `✓ enriched: ${providers.join(', ')}`;
+  }
+  if (e.skipped && Object.keys(e.skipped).length > 0) {
+    const parts = Object.entries(e.skipped).map(([k, v]) => `${k}: ${v}`);
+    return `· ${parts.join(' · ')}`;
+  }
+  return null;
+}
 
 function fmt(s: number): string {
   const m = Math.floor(s / 60);
@@ -232,6 +254,7 @@ export default function App() {
             contact: data.contact,
             partner_id: data.partner_id,
             activity_ids: data.activity_ids,
+            enrichment: data.enrichment,
             error: data.error,
           });
           if (data.status === 'done' || data.status === 'error') return data;
@@ -407,22 +430,30 @@ export default function App() {
           {jobs.length > 0 && (
             <View style={styles.statusStrip}>
               <Text style={styles.statusStripTitle}>Recent</Text>
-              {jobs.slice(0, 3).map((j) => (
-                <View key={j.job_id} style={styles.statusRow}>
-                  <View style={[
-                    styles.statusDot,
-                    j.status === 'done' && { backgroundColor: colors.morningGreen },
-                    j.status === 'error' && { backgroundColor: colors.danger },
-                    j.status === 'processing' && { backgroundColor: '#f0a020' },
-                  ]} />
-                  <Text style={styles.statusLabel} numberOfLines={1}>
-                    {jobLabel(j)}
-                  </Text>
-                  <Text style={styles.statusMeta}>
-                    {j.status === 'processing' ? (j.step || 'working') : j.status === 'done' ? 'done' : 'error'}
-                  </Text>
-                </View>
-              ))}
+              {jobs.slice(0, 3).map((j) => {
+                const enr = enrichmentLabel(j.enrichment);
+                return (
+                  <View key={j.job_id} style={{ marginBottom: 4 }}>
+                    <View style={styles.statusRow}>
+                      <View style={[
+                        styles.statusDot,
+                        j.status === 'done' && { backgroundColor: colors.morningGreen },
+                        j.status === 'error' && { backgroundColor: colors.danger },
+                        j.status === 'processing' && { backgroundColor: '#f0a020' },
+                      ]} />
+                      <Text style={styles.statusLabel} numberOfLines={1}>
+                        {jobLabel(j)}
+                      </Text>
+                      <Text style={styles.statusMeta}>
+                        {j.status === 'processing' ? (j.step || 'working') : j.status === 'done' ? 'done' : 'error'}
+                      </Text>
+                    </View>
+                    {enr && j.kind === 'scan' && (
+                      <Text style={styles.enrichmentMeta} numberOfLines={1}>{enr}</Text>
+                    )}
+                  </View>
+                );
+              })}
             </View>
           )}
 
@@ -698,6 +729,7 @@ const styles = StyleSheet.create({
   statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#ccc' },
   statusLabel: { flex: 1, fontFamily: fonts.bold, fontSize: 12.5, color: colors.nightGreen },
   statusMeta: { fontFamily: fonts.regular, fontSize: 11, color: colors.muted },
+  enrichmentMeta: { fontFamily: fonts.regular, fontSize: 10, color: colors.morningGreen, marginLeft: 16, marginTop: 1 },
 
   // Card
   card: {
