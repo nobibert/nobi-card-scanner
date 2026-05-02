@@ -60,6 +60,7 @@ const DEFAULT_BACKEND_URL =
 type Enrichment = {
   providers?: string[];
   errors?: string[];
+  warnings?: string[];
   skipped?: Record<string, string>;
   odoo_iap?: { vat?: string; company_name?: string; industry?: string };
   dropcontact?: { linkedin?: string; email_verified?: string };
@@ -79,15 +80,21 @@ type Job = {
   summary?: string; // for quick-todo
 };
 
-function enrichmentLabel(e?: Enrichment): string | null {
+type EnrichmentLabel = { text: string; tone: 'ok' | 'warn' | 'muted' };
+
+function enrichmentLabel(e?: Enrichment): EnrichmentLabel | null {
   if (!e) return null;
   const providers = e.providers || [];
+  const warnings = e.warnings || [];
+  if (providers.length > 0 && warnings.length > 0) {
+    return { text: `⚠ partial enrich: ${providers.join(', ')} · ${warnings.length} warning${warnings.length > 1 ? 's' : ''}`, tone: 'warn' };
+  }
   if (providers.length > 0) {
-    return `✓ enriched: ${providers.join(', ')}`;
+    return { text: `✓ enriched: ${providers.join(', ')}`, tone: 'ok' };
   }
   if (e.skipped && Object.keys(e.skipped).length > 0) {
     const parts = Object.entries(e.skipped).map(([k, v]) => `${k}: ${v}`);
-    return `· ${parts.join(' · ')}`;
+    return { text: `· ${parts.join(' · ')}`, tone: 'muted' };
   }
   return null;
 }
@@ -449,7 +456,16 @@ export default function App() {
                       </Text>
                     </View>
                     {enr && j.kind === 'scan' && (
-                      <Text style={styles.enrichmentMeta} numberOfLines={1}>{enr}</Text>
+                      <Text
+                        style={[
+                          styles.enrichmentMeta,
+                          enr.tone === 'warn' && { color: '#b35a00' },
+                          enr.tone === 'muted' && { color: colors.muted },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {enr.text}
+                      </Text>
                     )}
                   </View>
                 );
