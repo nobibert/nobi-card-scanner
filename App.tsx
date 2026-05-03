@@ -414,7 +414,7 @@ export default function App() {
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           {/* Header */}
           <View style={styles.header}>
-            <NobiLogo width={60} height={22} color={colors.nightGreen} />
+            <NobiLogo width={240} height={88} color={colors.nightGreen} />
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <Pressable
                 onPress={() => {
