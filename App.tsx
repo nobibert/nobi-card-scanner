@@ -716,7 +716,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 4,
   },
-  logo: { width: 64, height: 30 },
+  logo: { width: 120, height: 56 },
   myCardBtn: {
     flexDirection: 'row',
     alignItems: 'center',
