@@ -545,15 +545,14 @@ export default function App() {
             </View>
 
             <Pressable
-              onPressIn={startRec}
-              onPressOut={stopRec}
+              onPress={() => (isRecording ? stopRec() : startRec())}
               style={[styles.voiceBtn, isRecording && styles.voiceBtnRecording]}
             >
               <View style={[styles.voiceBtnIcon, isRecording && { backgroundColor: colors.danger }]}>
                 <MicIcon />
               </View>
               <Text style={[styles.voiceBtnLabel, isRecording && { color: '#b3402a' }]}>
-                {isRecording ? 'Recording…' : 'Hold to record'}
+                {isRecording ? 'Recording — tap to stop' : 'Tap to record'}
               </Text>
               <Text style={[styles.voiceBtnTime, isRecording && { color: '#b3402a' }]}>
                 {fmt(recordingTime)}
@@ -605,11 +604,11 @@ export default function App() {
             <Text style={styles.sheetKicker}>— Quick to-do</Text>
             <Text style={styles.sheetTitle}>Speak a to-do for Odoo</Text>
             <Text style={styles.sheetSub}>
-              Just like calling <Text style={{ fontFamily: fonts.bold, color: colors.nightGreen }}>+32 460 25 80 17</Text> — we transcribe and create the to-do in your Odoo inbox.
+              We transcribe your voice note and create the to-do in your Odoo inbox.
             </Text>
 
             <View style={{ alignItems: 'center', marginTop: 6 }}>
-              <Pressable onPressIn={sheetStartRec} onPressOut={sheetStopRec} style={[styles.bigMic, sheetRecording && styles.bigMicRecording]}>
+              <Pressable onPress={() => (sheetRecording ? sheetStopRec() : sheetStartRec())} style={[styles.bigMic, sheetRecording && styles.bigMicRecording]}>
                 {sheetRecording && (
                   <Animated.View
                     style={[
@@ -621,7 +620,7 @@ export default function App() {
                 <MicIcon size={40} />
               </Pressable>
               <Text style={styles.bigMicHint}>
-                {sheetRecording ? `Recording… ${fmt(sheetRecTime)}` : sheetHasRec ? 'Recorded — tap Send' : 'Tap and hold to record'}
+                {sheetRecording ? `Recording — tap to stop · ${fmt(sheetRecTime)}` : sheetHasRec ? 'Recorded — tap Send' : 'Tap to record'}
               </Text>
             </View>
 
@@ -716,7 +715,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 4,
   },
-  logo: { width: 120, height: 56 },
+  logo: { width: 240, height: 112 },
   myCardBtn: {
     flexDirection: 'row',
     alignItems: 'center',
