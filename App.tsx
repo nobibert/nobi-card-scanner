@@ -215,7 +215,10 @@ export default function App() {
 
   const stopRec = async () => {
     if (!isRecording) return;
-    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
     setIsRecording(false);
     const dur = Math.max(1, Math.floor((Date.now() - recordingStartRef.current) / 1000));
     try {
@@ -225,6 +228,13 @@ export default function App() {
       setVoiceDuration(dur);
     } catch (e) {
       console.error(e);
+    } finally {
+      recordingRef.current = null;
+      try {
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      } catch (e) {
+        console.warn('setAudioModeAsync reset failed', e);
+      }
     }
   };
 
@@ -347,7 +357,10 @@ export default function App() {
 
   const sheetStopRec = async () => {
     if (!sheetRecording) return;
-    if (sheetTimerRef.current) clearInterval(sheetTimerRef.current);
+    if (sheetTimerRef.current) {
+      clearInterval(sheetTimerRef.current);
+      sheetTimerRef.current = null;
+    }
     setSheetRecording(false);
     try {
       await sheetRecRef.current?.stopAndUnloadAsync();
@@ -355,10 +368,35 @@ export default function App() {
       setSheetHasRec(true);
     } catch (e) {
       console.error(e);
+    } finally {
+      // Keep sheetRecRef until send (we still need getURI); reset audio mode.
+      try {
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      } catch (e) {
+        console.warn('setAudioModeAsync reset failed', e);
+      }
     }
   };
 
-  const closeSheet = () => {
+  const closeSheet = async () => {
+    // Cancel any live recording without waiting for user to press stop.
+    if (sheetTimerRef.current) {
+      clearInterval(sheetTimerRef.current);
+      sheetTimerRef.current = null;
+    }
+    if (sheetRecRef.current) {
+      try {
+        await sheetRecRef.current.stopAndUnloadAsync();
+      } catch {
+        // ignore — recording may already be unloaded
+      }
+      sheetRecRef.current = null;
+    }
+    try {
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+    } catch (e) {
+      console.warn('setAudioModeAsync reset failed', e);
+    }
     setSheetOpen(false);
     setSheetHasRec(false);
     setSheetRecTime(0);
