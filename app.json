@@ -2,7 +2,7 @@
   "expo": {
     "name": "Nobi Card Scanner",
     "slug": "nobi-card-scanner",
-    "version": "1.0.0",
+    "version": "1.0.16",
     "sdkVersion": "54.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -16,11 +16,31 @@
     },
     "android": {
       "package": "life.nobi.cardscanner",
-      "permissions": ["CAMERA", "RECORD_AUDIO"]
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO"
+      ],
+      "versionCode": 6
     },
     "plugins": [
-      ["expo-image-picker", { "cameraPermission": "Take photos of business cards" }],
-      ["expo-av", { "microphonePermission": "Record voice notes" }]
-    ]
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Take photos of business cards"
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Record voice notes"
+        }
+      ]
+    ],
+    "owner": "bertdehaes",
+    "extra": {
+      "eas": {
+        "projectId": "ddf19813-8410-4408-8d11-d92930d88fa1"
+      }
+    }
   }
 }
