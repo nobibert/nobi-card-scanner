@@ -144,6 +144,8 @@ export default function App() {
   const sheetRecRef = useRef<Audio.Recording | null>(null);
   const sheetRecUriRef = useRef<string | null>(null);
   const sheetTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sheetRecStartRef = useRef<number>(0);
+  const [fabHold, setFabHold] = useState(false);
 
   const pulse = useRef(new Animated.Value(1)).current;
 
@@ -375,6 +377,7 @@ export default function App() {
       sheetRecRef.current = recording;
       sheetRecUriRef.current = null;
       const start = Date.now();
+      sheetRecStartRef.current = start;
       setSheetRecording(true);
       setSheetRecTime(0);
       sheetTimerRef.current = setInterval(() => {
@@ -659,9 +662,32 @@ export default function App() {
         </ScrollView>
 
         {/* Floating Quick To-do */}
-        <Pressable onPress={() => setSheetOpen(true)} style={styles.fab}>
+        <Pressable
+          onPressIn={async () => {
+            if (isRecording || sheetRecording || sheetSubmitting) return;
+            setFabHold(true);
+            await sheetStartRec();
+          }}
+          onPressOut={async () => {
+            setFabHold(false);
+            if (!sheetRecording) return;
+            const duration = Date.now() - sheetRecStartRef.current;
+            await sheetStopRec();
+            if (duration < 500) {
+              // Accidental tap — discard, do not hit backend.
+              sheetRecUriRef.current = null;
+              setSheetHasRec(false);
+              setSheetRecTime(0);
+              return;
+            }
+            await sendQuickTodo();
+          }}
+          style={[styles.fab, (fabHold || sheetRecording) && styles.fabRecording]}
+        >
           <MicIcon size={22} />
-          <Text style={styles.fabText}>Quick to-do</Text>
+          <Text style={styles.fabText}>
+            {sheetSubmitting ? 'Sending…' : sheetRecording ? `Recording · ${fmt(sheetRecTime)}` : 'Hold to talk'}
+          </Text>
         </Pressable>
 
         {/* Quick To-do bottom sheet */}
@@ -973,6 +999,7 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   fabText: { color: colors.white, fontFamily: fonts.bold, fontSize: 13 },
+  fabRecording: { backgroundColor: colors.danger },
 
   // Sheet
   sheetBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(46,68,71,0.45)' },
