@@ -1,3 +1,4 @@
+import { registerRootComponent } from 'expo';
 import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
@@ -1011,3 +1012,6 @@ const styles = StyleSheet.create({
   vcardName: { fontFamily: fonts.bold, fontSize: 16, color: colors.nightGreen },
   vcardLine: { fontFamily: fonts.regular, fontSize: 13, color: colors.muted },
 });
+
+registerRootComponent(App);
+
