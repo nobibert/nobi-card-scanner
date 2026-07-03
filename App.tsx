@@ -289,6 +289,35 @@ export default function App() {
     if (!photoUri || submitting) return;
     setSubmitting(true);
     try {
+      // If the user hits Process while still recording, flush the voice note
+      // synchronously so it gets attached to the request. Without this, the
+      // recording is orphaned (voiceUri is only set inside stopRec) and the
+      // scan is sent without any voice payload.
+      let pendingVoiceUri: string | null = voiceUri;
+      if (isRecording && recordingRef.current) {
+        if (recordingTimerRef.current) {
+          clearInterval(recordingTimerRef.current);
+          recordingTimerRef.current = null;
+        }
+        setIsRecording(false);
+        const dur = Math.max(1, Math.floor((Date.now() - recordingStartRef.current) / 1000));
+        try {
+          await recordingRef.current.stopAndUnloadAsync();
+          pendingVoiceUri = recordingRef.current.getURI() ?? null;
+          setVoiceUri(pendingVoiceUri);
+          setVoiceDuration(dur);
+        } catch (e) {
+          console.warn('flush recording on process failed', e);
+        } finally {
+          recordingRef.current = null;
+          try {
+            await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+          } catch (e) {
+            console.warn('setAudioModeAsync reset failed', e);
+          }
+        }
+      }
+
       const fd = new FormData();
       fd.append('photo', {
         // @ts-ignore — RN FormData file blob
@@ -298,10 +327,10 @@ export default function App() {
       } as any);
       fd.append('actions', Array.from(selectedActions).join(','));
       fd.append('user_id', '2');
-      if (voiceUri) {
+      if (pendingVoiceUri) {
         fd.append('voice', {
           // @ts-ignore
-          uri: voiceUri,
+          uri: pendingVoiceUri,
           name: 'voice.m4a',
           type: 'audio/m4a',
         } as any);
@@ -647,7 +676,12 @@ export default function App() {
             </Text>
 
             <View style={{ alignItems: 'center', marginTop: 6 }}>
-              <Pressable onPress={() => (sheetRecording ? sheetStopRec() : sheetStartRec())} style={[styles.bigMic, sheetRecording && styles.bigMicRecording]}>
+              <Pressable
+                onPressIn={() => { if (!sheetRecording) sheetStartRec(); }}
+                onPressOut={() => { if (sheetRecording) sheetStopRec(); }}
+                delayLongPress={120}
+                style={[styles.bigMic, sheetRecording && styles.bigMicRecording]}
+              >
                 {sheetRecording && (
                   <Animated.View
                     style={[
@@ -659,7 +693,7 @@ export default function App() {
                 <MicIcon size={40} />
               </Pressable>
               <Text style={styles.bigMicHint}>
-                {sheetRecording ? `Recording — tap to stop · ${fmt(sheetRecTime)}` : sheetHasRec ? 'Recorded — tap Send' : 'Tap to record'}
+                {sheetRecording ? `Recording — release to stop · ${fmt(sheetRecTime)}` : sheetHasRec ? 'Recorded — tap Send' : 'Hold to record'}
               </Text>
             </View>
 
