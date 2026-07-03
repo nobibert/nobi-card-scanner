@@ -2,7 +2,7 @@
   "expo": {
     "name": "Nobi Card Scanner",
     "slug": "nobi-card-scanner",
-    "version": "1.0.23",
+    "version": "1.0.24",
     "sdkVersion": "54.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -20,7 +20,7 @@
         "CAMERA",
         "RECORD_AUDIO"
       ],
-      "versionCode": 14
+      "versionCode": 15
     },
     "plugins": [
       [
